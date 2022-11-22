@@ -51,8 +51,11 @@ class FormatXTCRayonix(FormatXTC):
         if index is None:
             index = 0
         assert len(self.params.detector_address) == 1
+        event = self._get_event(index)
+        if event is None:
+            return None
         data = rayonix_tbx.get_data_from_psana_event(
-            self._get_event(index), self.params.detector_address[0]
+            event, self.params.detector_address[0]
         )
         return flex.double(data)
 

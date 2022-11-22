@@ -88,6 +88,10 @@ master_phil = iotbx.phil.parse(
   d_min = 4
     .type = float
     .help = Resolution limit for miller index display
+  tjump = False
+    .type = bool
+    .help = calculate t_val for monitoring temperature via water ring
+
 """
 )
 
@@ -335,6 +339,51 @@ def run(args=None, imageset=None):
                 xvals = resolution
                 max_x = resolution[flex.first_index(results, max_result)]
 
+            if params.tjump is not None:
+
+                def sinc_exp_vec(q_vec_in):
+                    p1, p2, p3, p4, p5, p6, p7, p8 = [
+                        325.08377127,
+                        1.80045309,
+                        -0.74444932,
+                        324.6805628,
+                        1.80872365,
+                        -0.75487194,
+                        2.234949,
+                        2.21508248,
+                    ]
+                    return (
+                        p1 * np.sinc(p2 * q_vec_in + p3) * np.exp(-(q_vec_in ** p7))
+                    ) - (p4 * np.sinc(p5 * q_vec_in + p6) * np.exp(-(q_vec_in ** p8)))
+
+                def scale_vector(input_array):
+                    return np.exp(-input_array)
+
+                svd_low_q = 1.047
+                svd_high_q = 2.649
+                scaling_low_q = 2.0
+                scaling_high_q = 2.5
+                refy = scale_vector(xvals.as_numpy_array())
+                y = results.as_numpy_array()
+                x = xvals.as_numpy_array()
+                data_mask = np.array(x, dtype=bool)
+                data_mask[x < scaling_low_q] = False
+                data_mask[x > scaling_high_q] = False
+                svd_mask = np.array(x, dtype=bool)
+                svd_mask[x < svd_low_q] = False
+                svd_mask[x > svd_high_q] = False
+                yy = y[data_mask]
+                refyy = refy[data_mask]
+                xx = x[data_mask]
+                q_ref = xx * refyy
+                q_sig = xx * yy
+                top = np.dot(q_sig, q_ref)
+                bottom = np.dot(q_sig, q_sig)
+                scalar = top / bottom
+                temp = y * scalar
+                new_x = x[svd_mask]
+                t_val = np.dot(sinc_exp_vec(new_x), temp[svd_mask]) / len(new_x)
+                logger.write("T-Jump-Value = %9.7f\n" % (t_val))
             for i, r in enumerate(results):
                 val = xvals[i]
                 if params.output_bins and "%.3f" % r != "nan":
@@ -354,7 +403,7 @@ def run(args=None, imageset=None):
                         results = results.select(xvals <= params.plot_x_max)
                         xvals = xvals.select(xvals <= params.plot_x_max)
                 if params.x_axis == "resolution":
-                    xvals = 1 / (xvals**2)
+                    xvals = 1 / (xvals ** 2)
                 if params.normalize:
                     plt.plot(
                         xvals.as_numpy_array(),
@@ -408,7 +457,7 @@ def run(args=None, imageset=None):
                     / (2 * flex.asin((math.pi / 180) * tt.select(nonzero) / 2)),
                 )
                 vals = resolution
-                vals = 1 / (vals**2)
+                vals = 1 / (vals ** 2)
             elif params.x_axis == "two_theta":
                 vals = tt
 
