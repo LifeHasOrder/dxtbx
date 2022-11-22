@@ -95,6 +95,9 @@ locator_str = """
               apply the filter then. Otherwise, apply when loading an \
               event.
   }
+  laser_filter = *all laser_on laser_off1 laser_off2
+    .type = choice
+    .help = Set True for laser on, false for laser off
 """
 locator_scope = parse(locator_str)
 
@@ -289,31 +292,71 @@ class FormatXTC(FormatMultiImageLazy, FormatStill, Format):
                 return run
         raise IndexError("Index is not within bounds")
 
-    def _get_event(self, index):
+    def _get_event(self, index, apply_filter=True):
         """Retrieve a psana event given and index. This is the slow step for reading XTC streams,
         so implement a cache for the last read event."""
         if index == self.current_index:
-            return self.current_event
+            event = self.current_event
         else:
+            event = self.get_run_from_index(index).event(self.times[index])
+
+        if not apply_filter or self.event_filter(index, event):
             self.current_index = index
             if self.params.mode == "idx":
-                evt = self.get_run_from_index(index).event(self.times[index])
+                event = self.get_run_from_index(index).event(self.times[index])
             elif self.params.mode == "smd":
                 for run_number in self.run_mapping:
                     start, stop, run, events = self.run_mapping[run_number]
                     if index >= start and index < stop:
-                        evt = events[index - start]
+                        event = events[index - start]
             if (
                 (
                     self.params.filter.required_present_codes
                     or self.params.filter.required_absent_codes
                 )
                 and not self.params.filter.pre_filter
-                and not self.filter_event(evt)
+                and not self.filter_event(event)
             ):
-                evt = None
-            self.current_event = evt
+                event = None
+            self.current_event = event
             return self.current_event
+        else:
+            return None
+
+    def event_filter(self, index, event):
+        """Override in derived class to keep or filter out events. Returns True if the event should be used"""
+        if self.params.laser_filter == "all":
+            return True
+
+        evr_det = psana.Detector("evr0")
+
+        if index == 0:
+            prev_event = None
+        else:
+            prev_event = self._get_event(index - 1, apply_filter=False)
+
+        def get_laser_code(evt):
+            event_codes = evr_det(evt)
+            if 203 in event_codes:
+                return "on"
+            else:
+                return "off"
+
+        laser_code = get_laser_code(event)
+        prev_code = None
+        if laser_code == "on":
+            laser_state = "laser_on"
+        elif not prev_event:
+            laser_state = "laser_off2"
+        else:
+            prev_code = get_laser_code(prev_event)
+            if prev_code == "on":
+                laser_state = "laser_off1"
+            else:
+                laser_state = "laser_off2"
+
+        print("Laser status", index, laser_code, prev_code, laser_state)
+        return laser_state == self.params.laser_filter
 
     @staticmethod
     def _get_datasource(image_file, params):
@@ -446,7 +489,7 @@ class FormatXTC(FormatMultiImageLazy, FormatStill, Format):
                 ) + self.params.spectrum_eV_offset
                 y = img.mean(axis=0)  # Collapse 2D image to 1D trace
             else:
-                mask = img == 2**16 - 1
+                mask = img == 2 ** 16 - 1
                 mask = np.invert(mask)
 
                 x, y = rotate_and_average(

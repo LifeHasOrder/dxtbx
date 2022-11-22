@@ -26,7 +26,7 @@ jungfrau_locator_str = """
     use_big_pixels = True
       .type = bool
       .help = account for multi-sized pixels in the 512x1024 Jungfrau panels, forming a 514x1030 pixel panel
-    detz_offset = None
+    detz_offset = 572
       .type = float
       .help = Distance from back of detector rail to sample interaction region (CXI) \
               or actual detector distance (XPP/MFX)
