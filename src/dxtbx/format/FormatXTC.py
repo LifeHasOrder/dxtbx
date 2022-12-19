@@ -424,7 +424,12 @@ class FormatXTC(FormatMultiImageLazy, FormatStill, Format):
         return self.n_images
 
     def get_beam(self, index=None):
-        return self._beam(index)
+        beam = self._beam(index)
+        if beam is not None:
+          return self._beam(index)
+        else:
+          raise(RuntimeError("image has no beam"))
+
 
     def _beam(self, index=None):
         """Returns a simple model for the beam"""
